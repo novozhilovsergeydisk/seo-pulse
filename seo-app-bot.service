@@ -1,0 +1,15 @@
+[Unit]
+Description=Telegram Bot for SEO App Gemini CLI
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Projects/seo-app
+ExecStart=/usr/bin/node scripts/telegram-bot.js
+Restart=on-failure
+RestartSec=10
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
