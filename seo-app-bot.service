@@ -10,6 +10,8 @@ ExecStart=/usr/bin/node scripts/telegram-bot.js
 Restart=on-failure
 RestartSec=10
 Environment=NODE_ENV=production
+Environment=HOME=/root
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 [Install]
 WantedBy=multi-user.target

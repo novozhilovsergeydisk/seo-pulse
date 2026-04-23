@@ -1,15 +1,17 @@
 import Link from "next/link";
+import Header from "./components/Header";
 
 export default function Home() {
   return (
-    <div className="bg-white min-h-screen">
+    <div className="bg-white dark:bg-gray-950 min-h-screen transition-colors duration-300">
+      <Header />
       <div className="relative isolate px-6 pt-14 lg:px-8">
         <div className="mx-auto max-w-2xl py-32 sm:py-48 lg:py-56">
           <div className="text-center">
-            <h1 className="text-4xl font-bold tracking-tight text-gray-900 sm:text-6xl">
+            <h1 className="text-4xl font-bold tracking-tight text-gray-900 dark:text-white sm:text-6xl">
               Professional SEO & GEO Tracking
             </h1>
-            <p className="mt-6 text-lg leading-8 text-gray-600">
+            <p className="mt-6 text-lg leading-8 text-gray-600 dark:text-gray-400">
               Monitor your search engine positions, analyze technical issues, and outrank your competitors with our powerful platform built for speed and precision.
             </p>
             <div className="mt-10 flex items-center justify-center gap-x-6">
@@ -19,7 +21,7 @@ export default function Home() {
               >
                 Get started
               </Link>
-              <Link href="/register" className="text-sm font-semibold leading-6 text-gray-900">
+              <Link href="/register" className="text-sm font-semibold leading-6 text-gray-900 dark:text-gray-300">
                 Create an account <span aria-hidden="true">→</span>
               </Link>
             </div>
