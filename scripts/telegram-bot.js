@@ -18,15 +18,70 @@ const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 const allowedChatId = parseInt(process.env.TELEGRAM_CHAT_ID);
 
 const SYSTEM_INSTRUCTION = `
-ВАЖНОЕ ПРАВИЛО: 
-1. Не забывай про рекомендации и принципы SOLID. 
-2. Действуй максимально аккуратно, система в промышленной эксплуатации. 
-3. ПРЕЖДЕ ЧЕМ ПРИСТУПАТЬ, ПОКАЖИ ПЛАН ДЕЙСТВИЙ. 
-4. Если что-то не понятно - спрашивай. 
-5. Как закончишь, НЕ ДЕЛАЙ ДЕПЛОЙ, сначала нужно протестировать изменения локально.
+Ты - опытный разработчик в режиме YOLO. Тебе РАЗРЕШЕНО изменять любые файлы проекта.
+1. Сразу приступай к выполнению задачи.
+2. Используй инструменты напрямую (replace, run_shell_command).
+3. Не вызывай субагентов.
+4. В конце обязательно напиши "✅ ЗАДАЧА ВЫПОЛНЕНА".
 `;
 
 console.log(`Starting Interactive Telegram Bot: ${process.env.TELEGRAM_BOT_NAME}`);
+
+bot.command('ps', async (ctx) => {
+  try {
+    const { query } = await import('../src/lib/db.js');
+    const dbTasks = await query("SELECT id, task_description, start_time FROM agent_tasks WHERE status = 'in_progress' AND project_name = 'seo-app' ORDER BY start_time DESC");
+    
+    let report = "📋 <b>Статус системы</b>\n\n";
+    
+    // 1. Активная задача в боте
+    report += "<b>Текущая сессия:</b>\n";
+    if (currentTaskId) {
+      report += `🔹 Задача #${currentTaskId} (в работе)\n\n`;
+    } else {
+      report += "🔸 Нет активной задачи в данной сессии\n\n";
+    }
+
+    // 2. Задачи из БД
+    report += "<b>Задачи 'in_progress' в БД:</b>\n";
+    if (dbTasks.rows.length > 0) {
+      dbTasks.rows.forEach(t => {
+        const time = new Date(t.start_time).toLocaleTimeString();
+        report += `• [#${t.id}] ${t.task_description} (${time})\n`;
+      });
+    } else {
+      report += "• Активных задач в БД нет\n";
+    }
+    report += "\n";
+
+    // 3. Процессы в системе
+    exec('ps aux | grep -E "gemini|commander" | grep -v grep', (err, stdout) => {
+      report += "<b>Процессы в системе:</b>\n";
+      if (stdout) {
+        const lines = stdout.trim().split('\n');
+        lines.forEach(line => {
+          const parts = line.trim().split(/\s+/);
+          const pid = parts[1];
+          const cpu = parts[2];
+          const mem = parts[3];
+          const cmd = line.toLowerCase();
+          
+          if (cmd.includes('commander')) {
+            report += `• 🎖 <b>[ГЕНЕРАЛ]</b> <code>PID: ${pid}</code>\n`;
+          } else {
+            report += `• ⚙️ <code>PID: ${pid}</code> (CPU: ${cpu}%, MEM: ${mem}%)\n`;
+          }
+        });
+      } else {
+        report += "• Процессы не найдены\n";
+      }
+      
+      ctx.reply(report, { parse_mode: 'HTML' });
+    });
+  } catch (error) {
+    ctx.reply(`❌ Ошибка при получении статуса: ${error.message}`);
+  }
+});
 
 bot.command('start', async (ctx) => {
   const welcomeText = `
@@ -35,10 +90,12 @@ bot.command('start', async (ctx) => {
 Я помогаю управлять проектом прямо из Telegram.
 Доступные команды:
 /task <описание> - Запустить новую задачу
+/ps - Статус задач и процессов
+/done <id> - Закрыть задачу (или текущую)
+/clear - Очистить зависшие задачи в БД
 /deploy - Полный деплой проекта
 /stop - Остановить текущий процесс
 /extend - Продлить сессию на 30 мин
-/done - Завершить задачу и сохранить отчет
 /help - Показать это сообщение
 
 Просто напиши мне любой запрос, и я передам его Gemini!
@@ -49,13 +106,14 @@ bot.command('start', async (ctx) => {
 bot.command('help', async (ctx) => {
   const helpText = `
 📖 Справка по командам:
-/task - Запуск конкретной задачи. Пример: /task Проверь логи БД
-/deploy - Выполняет последовательность: git push -> build -> restart
-/stop - Принудительно убивает процесс Gemini
-/extend - Сбрасывает тайм-аут бездействия
-/done - Сигнализирует Gemini о завершении и закрывает задачу в БД
-
-Любой текст без команды воспринимается как ввод для активного процесса или как новый запрос к Gemini.
+/task - Запуск конкретной задачи
+/ps - Показывает активную задачу, список из БД и процессы
+/done <id> - Закрывает задачу. Если ID не указан, закрывает текущую активную.
+/clear - Переводит ВСЕ задачи со статусом 'in_progress' в 'failed'
+/deploy - Синхронизация Git -> Сборка -> Перезапуск
+/stop - Остановить текущий процесс Gemini
+/extend - Сбросить тайм-аут бездействия
+/help - Показать справку
   `;
   await ctx.reply(helpText);
 });
@@ -71,14 +129,14 @@ let currentStatusMsgId = null;
 let currentTaskId = null;
 let waitingForDescription = false;
 
-const resetTimeout = (ctx, minutes = 30) => {
+const resetTimeout = (ctx, minutes = 60) => {
   if (taskTimeout) clearTimeout(taskTimeout);
   if (activeProcess) {
     taskTimeout = setTimeout(() => {
       if (activeProcess) {
         activeProcess.kill();
         activeProcess = null;
-        ctx.reply(`⏰ Тайм-аут (${minutes}м). Сессия завершена.`);
+        ctx.reply(`⏰ Тайм-аут (${minutes}м). Сессия завершена для экономии ресурсов.`);
       }
     }, minutes * 60000);
   }
@@ -91,15 +149,16 @@ const startGemini = async (ctx, prompt) => {
   let lastSentLog = '';
 
   const fullPrompt = `${SYSTEM_INSTRUCTION}\n\nЗАДАНИЕ: ${prompt}`;
-  
-  const ptyProcess = pty.spawn('gemini', ['-p', fullPrompt], {
+
+  const ptyProcess = pty.spawn('gemini', ['-i', fullPrompt, '--skip-trust', '--approval-mode', 'yolo'], {
     name: 'xterm-256color',
-    cols: 80,
-    rows: 40,
+    cols: 100,
+    rows: 50,
     cwd: projectRoot,
     env: { 
       ...process.env, 
-      TERM: 'xterm-256color', 
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
       HOME: '/root', 
       USER: 'root',
       AGENT_TASK_ID: currentTaskId || '' 
@@ -107,23 +166,36 @@ const startGemini = async (ctx, prompt) => {
   });
 
   activeProcess = ptyProcess;
-  resetTimeout(ctx, 30);
+  resetTimeout(ctx, 60);
+
+  let frame = 0;
+  const frames = ['🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚'];
 
   const updateUI = async (content, isFinal = false) => {
+    // Remove ANSI escape codes more robustly
     const clean = content
       .replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-PRZcf-ntqry=><]/g, '')
-      .replace(/[^\x20-\x7E\x0A\x0D\u0400-\u04FF]/g, '')
       .trim();
 
-    if (!clean || (clean === lastSentLog && !isFinal)) return;
+    if (!clean && !isFinal) return;
+    if (clean === lastSentLog && !isFinal && frame % 5 !== 0) return; // Update every few ticks if no new log
     lastSentLog = clean;
 
     const lines = clean.split('\n');
-    const tail = lines.slice(-20).join('\n');
-    const header = isFinal ? '✅ Завершено:\n' : '⏳ Выполнение...\n';
+    // Filter out common noise like "True color support not detected"
+    const filteredLines = lines.filter(line => !line.includes('True color (24-bit) support not detected'));
     
-    const lastLine = lines[lines.length - 1] || '';
-    const isPrompt = lastLine.includes('?') && (lastLine.includes('(y/N)') || lastLine.includes('[y/n]') || lastLine.includes('Execute'));
+    const tail = filteredLines.slice(-25).join('\n');
+    const clock = frames[frame % frames.length];
+    const header = isFinal ? '✅ <b>Завершено:</b>\n' : `${clock} <b>Выполнение...</b>\n`;
+    frame++;
+    
+    const lastLine = lines[lines.length - 1]?.toLowerCase() || '';
+    const isPrompt = lastLine.includes('?') || 
+                     lastLine.includes('(y/n)') || 
+                     lastLine.includes('execute') || 
+                     lastLine.includes('согласны') || 
+                     lastLine.includes('одобрения');
 
     const keyboard = isPrompt ? Markup.inlineKeyboard([
       Markup.button.callback('✅ Да', 'approve'),
@@ -181,25 +253,42 @@ bot.command('task', async (ctx) => {
 });
 
 bot.command('done', async (ctx) => {
-  if (activeProcess) {
+  const args = ctx.message.text.split(' ');
+  const targetId = args[1];
+
+  if (activeProcess && !targetId) {
     activeProcess.write('Заверши задачу и зафиксируй результат в БД.\r');
-    return ctx.reply('⏳ Отправил запрос на завершение. Ждем фиксации...');
+    return ctx.reply('⏳ Отправил запрос на завершение активному Gemini. Ждем...');
   }
   
-  if (currentTaskId) {
-    exec(`npx tsx scripts/log-tasks.ts end ${currentTaskId} completed "15 minutes"`, (error) => {
-      ctx.reply(`✅ Задача #${currentTaskId} закрыта вручную.`);
-      currentTaskId = null;
+  const idToClose = targetId || currentTaskId;
+
+  if (idToClose) {
+    exec(`npx tsx scripts/log-tasks.ts end ${idToClose} completed "15 minutes"`, (error) => {
+      if (error) return ctx.reply(`❌ Ошибка при закрытии #${idToClose}`);
+      ctx.reply(`✅ Задача #${idToClose} закрыта.`);
+      if (idToClose === currentTaskId) currentTaskId = null;
     });
   } else {
-    ctx.reply('❌ Нет активной задачи.');
+    ctx.reply('❌ Укажите ID задачи: /done <id> или используйте внутри активной сессии.');
+  }
+});
+
+bot.command('clear', async (ctx) => {
+  try {
+    const { query } = await import('../src/lib/db.js');
+    const res = await query("UPDATE agent_tasks SET status = 'failed', end_time = CURRENT_TIMESTAMP WHERE status = 'in_progress' AND project_name = 'seo-app'");
+    ctx.reply(`🧹 Порядок наведен! Закрыто задач: ${res.rowCount}`);
+    currentTaskId = null;
+  } catch (error) {
+    ctx.reply(`❌ Ошибка при очистке: ${error.message}`);
   }
 });
 
 bot.command('extend', async (ctx) => {
   if (activeProcess) {
-    resetTimeout(ctx, 30);
-    return ctx.reply('⏳ Работа продлена еще на 30 минут.');
+    resetTimeout(ctx, 60);
+    return ctx.reply('⏳ Работа продлена еще на 60 минут.');
   }
   ctx.reply('❌ Нет активных задач.');
 });
@@ -209,7 +298,17 @@ bot.command('stop', async (ctx) => {
     activeProcess.kill();
     activeProcess = null;
     if (taskTimeout) clearTimeout(taskTimeout);
-    return ctx.reply('🛑 Остановлено.');
+    
+    if (currentTaskId) {
+      const idToClose = currentTaskId;
+      exec(`npx tsx scripts/log-tasks.ts end ${idToClose} failed "1 minute"`, (error) => {
+        ctx.reply(`🛑 Остановлено. Задача #${idToClose} помечена как невыполненная.`);
+        currentTaskId = null;
+      });
+    } else {
+      ctx.reply('🛑 Остановлено.');
+    }
+    return;
   }
   ctx.reply('❌ Нет активных задач.');
 });

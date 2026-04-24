@@ -82,6 +82,11 @@ export default function RegisterPage() {
               Sign in
             </Link>
           </div>
+          <div className="text-center text-sm mt-4">
+            <Link href="/" className="font-semibold text-gray-600 hover:text-gray-500">
+              Вернуться на главную
+            </Link>
+          </div>
         </form>
       </div>
     </div>
