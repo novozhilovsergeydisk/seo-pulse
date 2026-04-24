@@ -28,6 +28,38 @@ const SYSTEM_INSTRUCTION = `
 
 console.log(`Starting Interactive Telegram Bot: ${process.env.TELEGRAM_BOT_NAME}`);
 
+bot.command('start', async (ctx) => {
+  const welcomeText = `
+👋 Привет! Я Gemini CLI Bot.
+
+Я помогаю управлять проектом прямо из Telegram.
+Доступные команды:
+/task <описание> - Запустить новую задачу
+/deploy - Полный деплой проекта
+/stop - Остановить текущий процесс
+/extend - Продлить сессию на 30 мин
+/done - Завершить задачу и сохранить отчет
+/help - Показать это сообщение
+
+Просто напиши мне любой запрос, и я передам его Gemini!
+  `;
+  await ctx.reply(welcomeText);
+});
+
+bot.command('help', async (ctx) => {
+  const helpText = `
+📖 Справка по командам:
+/task - Запуск конкретной задачи. Пример: /task Проверь логи БД
+/deploy - Выполняет последовательность: git push -> build -> restart
+/stop - Принудительно убивает процесс Gemini
+/extend - Сбрасывает тайм-аут бездействия
+/done - Сигнализирует Gemini о завершении и закрывает задачу в БД
+
+Любой текст без команды воспринимается как ввод для активного процесса или как новый запрос к Gemini.
+  `;
+  await ctx.reply(helpText);
+});
+
 bot.use(async (ctx, next) => {
   if (ctx.from?.id !== allowedChatId) return ctx.reply("❌ Доступ запрещен.");
   return next();

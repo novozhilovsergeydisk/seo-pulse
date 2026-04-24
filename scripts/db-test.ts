@@ -18,7 +18,7 @@ async function test() {
   try {
     const res = await pool.query('SELECT current_user, current_database()');
     console.log('Success!', res.rows[0]);
-  } catch (err) {
+  } catch (err: any) {
     console.error('Test failed:', err.message);
   } finally {
     process.exit(0);
