@@ -13,9 +13,22 @@ export async function runAudit(formData: FormData) {
 
   if (!projectId || !url) throw new Error("Missing required fields");
 
-  // verify project belongs to user
-  const projRes = await query('SELECT id FROM projects WHERE id = $1 AND user_id = $2', [projectId, session.user.id]);
+  // verify project belongs to user and get domain
+  const projRes = await query('SELECT id, domain FROM projects WHERE id = $1 AND user_id = $2', [projectId, session.user.id]);
   if (projRes.rows.length === 0) throw new Error("Unauthorized");
+  
+  const projectDomain = projRes.rows[0].domain;
+
+  // Simple SSRF protection: ensure URL starts with the project domain
+  // We allow both http and https, but restricted to the project domain
+  try {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.hostname !== projectDomain && !parsedUrl.hostname.endsWith('.' + projectDomain)) {
+       throw new Error(`URL must belong to the project domain: ${projectDomain}`);
+    }
+  } catch (e: any) {
+    throw new Error(e.message || "Invalid URL");
+  }
 
   let statusCode = 0;
   let title = "";

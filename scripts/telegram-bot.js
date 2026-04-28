@@ -17,6 +17,13 @@ const projectRoot = path.resolve(__dirname, '..');
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 const allowedChatId = parseInt(process.env.TELEGRAM_CHAT_ID);
 
+const escapeHTML = (str) => {
+  if (!str) return '';
+  return str.replace(/[&<>"']/g, 
+    m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])
+  );
+};
+
 const SYSTEM_INSTRUCTION = `
 Ты - опытный разработчик в режиме YOLO. Тебе РАЗРЕШЕНО изменять любые файлы проекта.
 1. Сразу приступай к выполнению задачи.
@@ -44,10 +51,11 @@ bot.command('ps', async (ctx) => {
 
     // 2. Задачи из БД
     report += "<b>Задачи 'in_progress' в БД:</b>\n";
-    if (dbTasks.rows.length > 0) {
+    if (dbTasks.rows && dbTasks.rows.length > 0) {
       dbTasks.rows.forEach(t => {
         const time = new Date(t.start_time).toLocaleTimeString();
-        report += `• [#${t.id}] ${t.task_description} (${time})\n`;
+        const desc = escapeHTML(t.task_description);
+        report += `• [#${t.id}] ${desc} (${time})\n`;
       });
     } else {
       report += "• Активных задач в БД нет\n";
@@ -76,9 +84,13 @@ bot.command('ps', async (ctx) => {
         report += "• Процессы не найдены\n";
       }
       
-      ctx.reply(report, { parse_mode: 'HTML' });
+      ctx.reply(report, { parse_mode: 'HTML' }).catch(err => {
+        console.error('Telegram reply error:', err);
+        ctx.reply(`❌ Ошибка отправки отчета: ${err.message}`);
+      });
     });
   } catch (error) {
+    console.error('Command /ps error:', error);
     ctx.reply(`❌ Ошибка при получении статуса: ${error.message}`);
   }
 });
@@ -168,6 +180,18 @@ const startGemini = async (ctx, prompt) => {
   activeProcess = ptyProcess;
   resetTimeout(ctx, 60);
 
+  // Логирование сессии в БД
+  try {
+    const { query } = await import('../src/lib/db.js');
+    await query(
+      'INSERT INTO agent_sessions (pid, task_id, status) VALUES ($1, $2, $3)',
+      [ptyProcess.pid, currentTaskId || null, 'active']
+    );
+    console.log(`[Session] Registered PID ${ptyProcess.pid} for task ${currentTaskId}`);
+  } catch (err) {
+    console.error('[Session] Failed to register session:', err);
+  }
+
   let frame = 0;
   const frames = ['🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚'];
 
@@ -220,9 +244,21 @@ const startGemini = async (ctx, prompt) => {
 
   ptyProcess.onExit(async ({ exitCode }) => {
     clearInterval(throttle);
+    const pid = ptyProcess.pid;
     activeProcess = null;
     if (taskTimeout) clearTimeout(taskTimeout);
     await updateUI(fullLog, true);
+    
+    try {
+      const { query } = await import('../src/lib/db.js');
+      await query(
+        "UPDATE agent_sessions SET status = 'finished' WHERE pid = $1 AND status = 'active'",
+        [pid]
+      );
+    } catch (err) {
+      console.error('[Session] Failed to update session status on exit:', err);
+    }
+
     if (exitCode !== 0 && exitCode !== null) {
       await ctx.reply(`⚠️ Код выхода: ${exitCode}`);
     }
@@ -230,6 +266,9 @@ const startGemini = async (ctx, prompt) => {
 };
 
 bot.command('deploy', async (ctx) => {
+  if (activeProcess) {
+    return ctx.reply('⚠️ Уже есть активная задача. Сначала остановите её (/stop) или дождитесь завершения.');
+  }
   const description = 'Full deployment: git push, build and restart';
   exec(`npx tsx scripts/log-tasks.ts start "${description}"`, (error, stdout) => {
     const match = stdout.match(/TASK_ID:(\d+)/);
@@ -239,6 +278,9 @@ bot.command('deploy', async (ctx) => {
 });
 
 bot.command('task', async (ctx) => {
+  if (activeProcess) {
+    return ctx.reply('⚠️ Уже есть активная задача. Сначала остановите её (/stop) или дождитесь завершения.');
+  }
   const description = ctx.message.text.split(' ').slice(1).join(' ');
   if (!description) {
     waitingForDescription = true;
@@ -276,9 +318,15 @@ bot.command('done', async (ctx) => {
 
 bot.command('clear', async (ctx) => {
   try {
+    if (activeProcess) {
+      activeProcess.kill();
+      activeProcess = null;
+      if (taskTimeout) clearTimeout(taskTimeout);
+    }
+
     const { query } = await import('../src/lib/db.js');
     const res = await query("UPDATE agent_tasks SET status = 'failed', end_time = CURRENT_TIMESTAMP WHERE status = 'in_progress' AND project_name = 'seo-app'");
-    ctx.reply(`🧹 Порядок наведен! Закрыто задач: ${res.rowCount}`);
+    ctx.reply(`🧹 Порядок наведен! Активные процессы завершены, закрыто задач в БД: ${res.rowCount}`);
     currentTaskId = null;
   } catch (error) {
     ctx.reply(`❌ Ошибка при очистке: ${error.message}`);

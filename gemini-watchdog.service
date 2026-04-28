@@ -1,0 +1,17 @@
+[Unit]
+Description=Gemini CLI Process Watchdog
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Projects/seo-app
+Environment=DATABASE_URL=postgresql://postgres:postgres_12345@localhost:5432/seo_app
+Environment=TELEGRAM_BOT_TOKEN=8549290522:AAFow8QDhmsn6UnEMCaHYd5Zvfys4H9dPYo
+Environment=TELEGRAM_CHAT_ID=1020570278
+ExecStart=/root/Projects/seo-app/watchdog/gemini_watchdog
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
