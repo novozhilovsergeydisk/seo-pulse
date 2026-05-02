@@ -5,7 +5,7 @@ After=network.target postgresql.service
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/root/Projects/seo-app
+WorkingDirectory=/var/www/seo-pulse
 ExecStart=/usr/bin/node scripts/telegram-bot.js
 Restart=on-failure
 RestartSec=10

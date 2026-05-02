@@ -1,15 +1,15 @@
 [Unit]
-Description=Gemini CLI Process Watchdog
+Description=SEO Pulse Next.js Web App
 After=network.target postgresql.service
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/var/www/seo-pulse
-EnvironmentFile=/var/www/seo-pulse/.env.local
-ExecStart=/var/www/seo-pulse/watchdog/gemini_watchdog
+ExecStart=/usr/bin/npm start
 Restart=always
-RestartSec=10
+Environment=NODE_ENV=production
+Environment=PORT=3000
 
 [Install]
 WantedBy=multi-user.target

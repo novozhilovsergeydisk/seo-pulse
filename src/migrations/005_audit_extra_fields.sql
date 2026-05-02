@@ -1,0 +1,4 @@
+-- 005_audit_extra_fields.sql
+ALTER TABLE audits ADD COLUMN IF NOT EXISTS load_time_ms INTEGER;
+ALTER TABLE audits ADD COLUMN IF NOT EXISTS og_title VARCHAR(2048);
+ALTER TABLE audits ADD COLUMN IF NOT EXISTS og_image VARCHAR(2048);

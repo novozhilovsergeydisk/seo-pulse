@@ -189,12 +189,27 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
                     <div>
                       <p><strong>Title:</strong> {audit.title ? <span className="text-gray-900">{audit.title}</span> : <span className="text-red-500">Missing</span>}</p>
                       <p className="mt-1"><strong>Description:</strong> {audit.description ? "✅ Present" : <span className="text-red-500">❌ Missing</span>}</p>
+                      <p className="mt-1"><strong>Load Time:</strong> {audit.load_time_ms ? <span className={audit.load_time_ms > 2000 ? "text-red-500" : "text-green-600"}>{audit.load_time_ms}ms</span> : "N/A"}</p>
                     </div>
                     <div>
                       <p><strong>H1 Count:</strong> {audit.h1_count} {audit.h1_count === 1 ? '✅' : <span className="text-red-500">⚠️ (Should be 1)</span>}</p>
+                      <p className="mt-1"><strong>OG Tags:</strong> {audit.og_title ? "✅ Title" : "❌ Title"} | {audit.og_image ? "✅ Image" : "❌ Image"}</p>
                       <p className="mt-1 text-xs text-gray-400">Checked: {new Date(audit.created_at).toLocaleString()}</p>
                     </div>
                   </div>
+                  {audit.recommendations && (
+                    <div className="mt-4 p-3 bg-indigo-50 rounded-md border border-indigo-100">
+                      <p className="text-xs font-bold text-indigo-800 uppercase tracking-wider mb-2">💡 SEO Recommendations</p>
+                      <ul className="text-sm text-indigo-900 space-y-1">
+                        {audit.recommendations.split('\n').map((rec, i) => (
+                          <li key={i} className="flex items-start gap-2">
+                            <span>•</span>
+                            <span>{rec}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </li>
               ))}
               {audits.length === 0 && <li className="py-4 text-sm text-gray-500">No audits run yet.</li>}
